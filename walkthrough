@@ -20,4 +20,16 @@ There's a PHP exploit that allows for RCE via the cgi-bin directory. If that's n
 
 searchsploit -m 29290
 
+Now, how to use this? Let's take a look back at our target web server.
+
+Wait a minute, what's this? Now it's showing a landing page for a dummy consulting business. Well, this is rather more helpful than "It works!"
+
+I guess I didn't wait long enough originally for all the services on the machine to fully boot up. We live and learn.
+
+Anyway, let's poke around and see what new stuff we can find. Starting with another gobuster pass, we also get an /assets directory. The only really interesting thing that jumps out here is a file called .DS_Store, which we can download.
+
+Catting out DS_Store gives us mostly gibberish; using strings doesn't help much either. It seems to mostly be stuff related to CSS or just more gibberish. The final string is DSDB, which might relate to a database of some kind, but I'm not optimistic.
+
+The /cgi-bin directory is still there, and at the bottom of the homepage is a contact form.
+
 TBC...
