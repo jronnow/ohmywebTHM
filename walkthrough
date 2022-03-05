@@ -1,0 +1,23 @@
+We already know this is a web server, but before we poke around in our browser let's set our trusty nmap to run while we take a look.
+
+nmap -vvvv -A -oN scan -p- $TARGET
+
+While that runs, let's hop over to port 80. The web page just says "It works!" and the page source doesn't reveal much of use either.
+
+Time to enumerate web directories:
+
+gobuster dir -u $TARGET -w /usr/share/wordlists/dirb/common.txt -t 64
+
+This reveals two things: /cgi-bin/ (which is forbidden) and /index.html which is just the homepage.
+
+So far our nmap scan has revealed port 80 (duh) and port 22. Name a more iconic duo, I'll wait. I didn't tell nmap to be fast and aggressive, so it's gonna be a little while longer before I can see details on which versions of these services are running. In the meantime, let's see what Nikto's got to say.
+
+nikto -host $TARGET
+
+Looks like we've got an Apache 2.4.49 server. Let's plug that into searchsploit and see what we get.
+
+There's a PHP exploit that allows for RCE via the cgi-bin directory. If that's not promising, I don't know what is. Let's grab it and stick it in our current directory.
+
+searchsploit -m 29290
+
+TBC...
